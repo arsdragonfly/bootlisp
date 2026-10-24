@@ -12,7 +12,6 @@
 enum tag { TAG_PTR, TAG_NUMBER, TAG_REF, TAG_BUILTIN };
 enum builtin {
   BUILTIN_LAMBDA,
-  BUILTIN_T,
   BUILTIN_QUOTE,
   BUILTIN_CAR,
   BUILTIN_CDR,
@@ -241,9 +240,7 @@ val apply_sexp(val car, val cdr, val *p_ctx, cell *env) {
   if (car.v.tag != TAG_PTR && car.v.tag != TAG_BUILTIN) {
     return inval;
   } else if (car.v.tag == TAG_BUILTIN) {
-    if (car.v.n == BUILTIN_T) {
-      return car;
-    } else if (car.v.n == BUILTIN_CTX && cdr.p == NULL) {
+    if (car.v.n == BUILTIN_CTX && cdr.p == NULL) {
       return *p_ctx;
     }
     val cadr = CAR(cdr);
@@ -289,8 +286,8 @@ val apply_sexp(val car, val cdr, val *p_ctx, cell *env) {
           if (cadr.v.tag == caddr.v.tag &&
               (cadr.v.tag == TAG_PTR ? cadr.p == caddr.p
                                      : cadr.v.n == caddr.v.n)) {
-            result.v.tag = TAG_BUILTIN;
-            result.v.n = BUILTIN_T;
+            result.v.tag = TAG_NUMBER;
+            result.v.n = 1;
           } else {
             result.p = NULL;
           }
