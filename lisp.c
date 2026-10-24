@@ -22,7 +22,7 @@ enum builtin {
   BUILTIN_ADD,
   BUILTIN_NEG,
   BUILTIN_CTX,
-  BUILTIN_INVAL = -1,
+  BUILTIN_INVAL,
 };
 
 typedef struct cell cell;
@@ -86,8 +86,8 @@ char *numerals = "0123456789";
 
 cell *cellalloc() {
   if (gbl.idx < ARENA_SIZE) {
-    gbl.idx += 1;
-    return gbl.arena + gbl.idx;
+    gbl.idx++;
+    return gbl.arena + gbl.idx - 1;
   }
   fprintf(stderr, "error: out of memory\n");
   exit(1);
@@ -204,6 +204,7 @@ void print_sexp(val sexp) {
       } else {
         printf(". ");
         print_atom(p->cdr);
+        break;
       }
     }
     printf(")");
@@ -244,71 +245,51 @@ val evcar(val sexp, val *p_ctx, cell *env, val *outcdr) {
 }
 
 val apply_sexp(val car, val cdr, val *p_ctx, cell *env) {
-  if (car.v.tag != TAG_PTR && car.v.tag != TAG_BUILTIN) {
-    return inval;
-  } else if (car.v.tag == TAG_BUILTIN) {
+  if (car.v.tag == TAG_BUILTIN) {
+    val cadr, caddr;
+    if (car.v.n >= BUILTIN_INVAL) {
+      return inval;
+    }
     if (car.v.n == BUILTIN_CTX && cdr.p == NULL) {
       return *p_ctx;
     }
-    val cadr = CAR(cdr);
+    cadr = CAR(cdr);
     if (car.v.n == BUILTIN_QUOTE) {
       return cadr;
-    } else if (car.v.n == BUILTIN_LAMBDA) {
+    }
+    if (car.v.n == BUILTIN_LAMBDA) {
       return (val)cellnew((val)env, cadr);
-    } else {
-      cadr = VALID(eval_sexp(cadr, p_ctx, env));
-      if (car.v.n == BUILTIN_CTX) {
-        *p_ctx = cadr;
-        return *p_ctx;
-      } else if (car.v.n == BUILTIN_NEG) {
+    }
+    cadr = VALID(evcar(cdr, p_ctx, env, &cdr));
+    switch (car.v.n) {
+    case BUILTIN_CTX:
+      *p_ctx = cadr;
+      return *p_ctx;
+    case BUILTIN_NEG:
+      return tagval(TAG_NUMBER, -NUMBER(cadr));
+    case BUILTIN_PAIR:
+      return cadr.v.tag == TAG_PTR ? cadr : (val)(cell *)NULL;
+    case BUILTIN_CAR:
+      return CAR(cadr);
+    case BUILTIN_CDR:
+      return CDR(cadr);
+    case BUILTIN_IF:
+      return cadr.p != NULL ? eval_sexp(CAR(cdr), p_ctx, env)
+                            : eval_sexp(CAR(CDR(cdr)), p_ctx, env);
+    default:
+      caddr = VALID(evcar(cdr, p_ctx, env, &cdr));
+      switch (car.v.n) {
+      case BUILTIN_CONS:
+        return (val)cellnew(cadr, caddr);
+      case BUILTIN_EQ:
+        return cadr.p == caddr.p ? tagval(TAG_NUMBER, 1) : (val)(cell *)NULL;
+      case BUILTIN_ADD:
         if (cadr.v.tag == TAG_NUMBER) {
-          return tagval(TAG_NUMBER, -cadr.v.n);
+          return tagval(TAG_NUMBER, cadr.v.n + NUMBER(caddr));
         } else if (cadr.v.tag == TAG_PTR) {
-          return (val){.p = (cell *)-(int32_t)cadr.p};
+          return (val)(cadr.p + NUMBER(caddr));
         } else {
           return inval;
-        }
-      } else if (car.v.n == BUILTIN_CAR || car.v.n == BUILTIN_CDR ||
-                 car.v.n == BUILTIN_PAIR) {
-        if (cadr.v.tag != TAG_PTR || cadr.p == NULL) {
-          if (car.v.n == BUILTIN_PAIR) {
-            return (val)(cell *)NULL;
-          }
-          return inval;
-        } else {
-          if (car.v.n == BUILTIN_CAR) {
-            return cadr.p->car;
-          } else if (car.v.n == BUILTIN_CDR) {
-            return cadr.p->cdr;
-          } else {
-            return cadr;
-          }
-        }
-      } else if (car.v.n == BUILTIN_CONS || car.v.n == BUILTIN_EQ ||
-                 car.v.n == BUILTIN_ADD) {
-        val caddr = CAR(CDR(cdr));
-        caddr = VALID(eval_sexp(caddr, p_ctx, env));
-        if (car.v.n == BUILTIN_EQ) {
-          val result;
-          if (cadr.v.tag == caddr.v.tag &&
-              (cadr.v.tag == TAG_PTR ? cadr.p == caddr.p
-                                     : cadr.v.n == caddr.v.n)) {
-            result.v.tag = TAG_NUMBER;
-            result.v.n = 1;
-          } else {
-            result.p = NULL;
-          }
-          return result;
-        } else if (car.v.n == BUILTIN_ADD) {
-          return tagval(TAG_NUMBER, NUMBER(cadr) + NUMBER(caddr));
-        } else {
-          return (val)cellnew(cadr, caddr);
-        }
-      } else if (car.v.n == BUILTIN_IF) {
-        if (cadr.p != NULL) {
-          return eval_sexp(CAR(CDR(cdr)), p_ctx, env);
-        } else {
-          return eval_sexp(CAR(CDR(CDR(cdr))), p_ctx, env);
         }
       }
     }
