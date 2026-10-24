@@ -213,6 +213,7 @@ void print_sexp(val sexp) {
 }
 
 val eval_sexp(val sexp, val *p_ctx, cell *env);
+val evcar(val sexp, val *p_ctx, cell *env, val *outcdr);
 val apply_sexp(val car, val cdr, val *p_ctx, cell *env);
 
 val eval_sexp(val sexp, val *p_ctx, cell *env) {
@@ -234,6 +235,12 @@ val eval_sexp(val sexp, val *p_ctx, cell *env) {
     return apply_sexp(car, sexp.p->cdr, p_ctx, env);
   }
   return inval;
+}
+
+val evcar(val sexp, val *p_ctx, cell *env, val *outcdr) {
+  val result = eval_sexp(CAR(sexp), p_ctx, env);
+  *outcdr = CDR(sexp);
+  return result;
 }
 
 val apply_sexp(val car, val cdr, val *p_ctx, cell *env) {
