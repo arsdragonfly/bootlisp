@@ -32,7 +32,8 @@ typedef union val val;
 union val {
   cell *p;
   struct {
-    unsigned tag : 3;
+    unsigned tag : 2;
+    unsigned m : 1;
     signed n : 29;
   } v;
 };
@@ -40,7 +41,7 @@ struct cell {
   val car, cdr;
 };
 
-val inval = {.v = {TAG_BUILTIN, BUILTIN_INVAL}};
+val inval = {.v = {.tag = TAG_BUILTIN, .m = 0, .n = BUILTIN_INVAL}};
 int invalid(val v) { return v.v.tag == TAG_BUILTIN && v.v.n == BUILTIN_INVAL; }
 
 val tagval(int tag, int n) { return (val){.v = {.tag = tag, .n = n}}; }
