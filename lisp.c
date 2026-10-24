@@ -13,7 +13,6 @@ enum tag {
   TAG_PTR = 0,
   TAG_NUMBER,
   TAG_REF,
-  TAG_ENV,
   TAG_BUILTIN,
   TAG_INVAL = 7
 };
@@ -141,9 +140,9 @@ void parse_rest_of_line(parser *par) {
 
 val parse_sexp(parser *par) {
   val sexp = {.p = NULL}, sexp2;
-  char prefix[] = "%$@";
+  char prefix[] = "%@";
   char *charidx;
-  int tags[] = {TAG_REF, TAG_ENV, TAG_BUILTIN};
+  int tags[] = {TAG_REF, TAG_BUILTIN};
   val *p_sexp = &sexp;
   parse_multi(par, " ");
   if (parse_symbol(par, numerals, 0)) {
@@ -218,15 +217,6 @@ val eval_sexp(val sexp, val *p_ctx, cell *env) {
   if (sexp.v.tag == TAG_NUMBER || sexp.v.tag == TAG_BUILTIN ||
       sexp.v.tag == TAG_INVAL) {
     return sexp;
-  } else if (sexp.v.tag == TAG_ENV) {
-    cell *p = p_ctx->p;
-    while (p) {
-      if (NUMBER(CAR(CAR(p))) == sexp.v.n) {
-        return CDR(CAR(p));
-      }
-      p = CDR(p).p;
-    }
-    return inval;
   } else if (sexp.v.tag == TAG_REF) {
     cell *p = env;
     size_t step = sexp.v.n;
