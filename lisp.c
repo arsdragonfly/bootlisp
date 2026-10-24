@@ -27,7 +27,7 @@ enum builtin {
   BUILTIN_PAIR,
   BUILTIN_IF,
   BUILTIN_ADD,
-  BUILTIN_SUB,
+  BUILTIN_NEG,
   BUILTIN_CTX,
 };
 
@@ -132,6 +132,10 @@ int32_t parse_multi(parser *par, char *cs) {
   return sum;
 }
 
+int32_t parse_natural(parser* par) {
+  return parse_multi(par, numerals);
+}
+
 void parse_rest_of_line(parser *par) {
   while (par->c != EOF && par->c != '\n') {
     advance_parser(par);
@@ -146,11 +150,15 @@ val parse_sexp(parser *par) {
   val *p_sexp = &sexp;
   parse_multi(par, " ");
   if (parse_symbol(par, numerals, 0)) {
-    return tagval(TAG_NUMBER, parse_multi(par, numerals));
+    return tagval(TAG_NUMBER, parse_natural(par));
+  } else if (parse_symbol(par, "-", 1)) {
+    return tagval(TAG_NUMBER, -parse_natural(par));
   } else if ((charidx = parse_symbol(par, prefix, 1))) {
-    return tagval(tags[charidx - prefix], parse_multi(par, numerals));
+    return tagval(tags[charidx - prefix], parse_natural(par));
   } else if (parse_symbol(par, "/", 1)) {
     return tagval(TAG_BUILTIN, BUILTIN_LAMBDA);
+  } else if (parse_symbol(par, "$", 1)) {
+    return tagval(TAG_BUILTIN, BUILTIN_CTX);
   } else if (parse_symbol(par, "(", 1)) {
     while (1) {
       while (parse_symbol(par, " \n", 0)) {
@@ -254,9 +262,17 @@ val apply_sexp(val car, val cdr, val *p_ctx, cell *env) {
       if (car.v.n == BUILTIN_CTX) {
         *p_ctx = cadr;
         return *p_ctx;
+      } else if (car.v.n == BUILTIN_NEG) {
+        if (cadr.v.tag == TAG_NUMBER) {
+          return tagval(TAG_NUMBER, -cadr.v.n);
+	} else if (cadr.v.tag == TAG_PTR) {
+	  return (val){.p = (cell *) -(int32_t)cadr.p};
+	} else {
+          return inval;
+	}
       } else if (car.v.n == BUILTIN_CAR || car.v.n == BUILTIN_CDR ||
                  car.v.n == BUILTIN_PAIR) {
-        if (cadr.v.tag != TAG_PTR || cadr.p == NULL) {
+	if (cadr.v.tag != TAG_PTR || cadr.p == NULL) {
           if (car.v.n == BUILTIN_PAIR) {
             return (val)(cell *)NULL;
           }
@@ -271,7 +287,7 @@ val apply_sexp(val car, val cdr, val *p_ctx, cell *env) {
           }
         }
       } else if (car.v.n == BUILTIN_CONS || car.v.n == BUILTIN_EQ ||
-                 car.v.n == BUILTIN_ADD || car.v.n == BUILTIN_SUB) {
+                 car.v.n == BUILTIN_ADD) {
         val caddr = CAR(CDR(cdr));
         caddr = VALID(eval_sexp(caddr, p_ctx, env));
         if (car.v.n == BUILTIN_EQ) {
@@ -285,10 +301,8 @@ val apply_sexp(val car, val cdr, val *p_ctx, cell *env) {
             result.p = NULL;
           }
           return result;
-        } else if (car.v.n == BUILTIN_ADD || car.v.n == BUILTIN_SUB) {
-          return tagval(TAG_NUMBER, (car.v.n == BUILTIN_ADD)
-                                        ? (NUMBER(cadr) + NUMBER(caddr))
-                                        : (NUMBER(cadr) - NUMBER(caddr)));
+        } else if (car.v.n == BUILTIN_ADD) {
+          return tagval(TAG_NUMBER, NUMBER(cadr) + NUMBER(caddr));
         } else {
           return (val)cellnew(cadr, caddr);
         }
@@ -314,7 +328,7 @@ void read_line(parser *par, val *p_ctx) {
     sexp = parse_sexp(par);
     if (sexp.v.tag == TAG_INVAL) {
       if (par->c != '\n' && par->c != EOF) {
-        fprintf(stderr, "failed to parse sexp at %d\n", par->c);
+        fprintf(stderr, "failed to parse sexp at %c\n", par->c);
         parse_rest_of_line(par);
       }
       return;
@@ -325,7 +339,7 @@ void read_line(parser *par, val *p_ctx) {
 }
 
 int main() {
-  parser par;
+  parser par = {.c = '\n'};
   val ctx = {.p = NULL};
   while (par.c != EOF) {
     printf("lisp>");
