@@ -9,15 +9,9 @@
 #endif
 
 #define ARENA_SIZE 1 << 20
-enum tag {
-  TAG_PTR = 0,
-  TAG_NUMBER,
-  TAG_REF,
-  TAG_BUILTIN,
-  TAG_INVAL = 7
-};
+enum tag { TAG_PTR, TAG_NUMBER, TAG_REF, TAG_BUILTIN };
 enum builtin {
-  BUILTIN_LAMBDA = 0,
+  BUILTIN_LAMBDA,
   BUILTIN_T,
   BUILTIN_QUOTE,
   BUILTIN_CAR,
@@ -29,6 +23,7 @@ enum builtin {
   BUILTIN_ADD,
   BUILTIN_NEG,
   BUILTIN_CTX,
+  BUILTIN_INVAL = -1,
 };
 
 typedef struct cell cell;
@@ -45,7 +40,8 @@ struct cell {
   val car, cdr;
 };
 
-val inval = {.v = {TAG_INVAL, 0}};
+val inval = {.v = {TAG_BUILTIN, BUILTIN_INVAL}};
+int invalid(val v) { return v.v.tag == TAG_BUILTIN && v.v.n == BUILTIN_INVAL; }
 
 val tagval(int tag, int n) { return (val){.v = {.tag = tag, .n = n}}; }
 
@@ -76,7 +72,7 @@ val tagval(int tag, int n) { return (val){.v = {.tag = tag, .n = n}}; }
 #define VALID(expr)                                                            \
   ({                                                                           \
     val value_ = (val)(expr);                                                  \
-    if (value_.v.tag == TAG_INVAL)                                             \
+    if (invalid(value_))                                                       \
       return inval;                                                            \
     value_;                                                                    \
   })
@@ -132,9 +128,7 @@ int32_t parse_multi(parser *par, char *cs) {
   return sum;
 }
 
-int32_t parse_natural(parser* par) {
-  return parse_multi(par, numerals);
-}
+int32_t parse_natural(parser *par) { return parse_multi(par, numerals); }
 
 void parse_rest_of_line(parser *par) {
   while (par->c != EOF && par->c != '\n') {
@@ -169,7 +163,7 @@ val parse_sexp(parser *par) {
         }
       }
       sexp2 = parse_sexp(par);
-      if (sexp2.v.tag == TAG_INVAL) {
+      if (invalid(sexp2)) {
         if (!parse_symbol(par, ")", 1)) {
           return inval;
         }
@@ -185,7 +179,7 @@ val parse_sexp(parser *par) {
 void print_atom(val sexp) {
   if (sexp.v.tag == TAG_BUILTIN && sexp.v.n == BUILTIN_LAMBDA) {
     printf("/");
-  } else if (sexp.v.tag == TAG_INVAL) {
+  } else if (invalid(sexp)) {
     printf("#INVAL");
   } else {
     char *prefixes = "  %$ @";
@@ -222,8 +216,7 @@ val eval_sexp(val sexp, val *p_ctx, cell *env);
 val apply_sexp(val car, val cdr, val *p_ctx, cell *env);
 
 val eval_sexp(val sexp, val *p_ctx, cell *env) {
-  if (sexp.v.tag == TAG_NUMBER || sexp.v.tag == TAG_BUILTIN ||
-      sexp.v.tag == TAG_INVAL) {
+  if (sexp.v.tag == TAG_NUMBER || sexp.v.tag == TAG_BUILTIN) {
     return sexp;
   } else if (sexp.v.tag == TAG_REF) {
     cell *p = env;
@@ -265,14 +258,14 @@ val apply_sexp(val car, val cdr, val *p_ctx, cell *env) {
       } else if (car.v.n == BUILTIN_NEG) {
         if (cadr.v.tag == TAG_NUMBER) {
           return tagval(TAG_NUMBER, -cadr.v.n);
-	} else if (cadr.v.tag == TAG_PTR) {
-	  return (val){.p = (cell *) -(int32_t)cadr.p};
-	} else {
+        } else if (cadr.v.tag == TAG_PTR) {
+          return (val){.p = (cell *)-(int32_t)cadr.p};
+        } else {
           return inval;
-	}
+        }
       } else if (car.v.n == BUILTIN_CAR || car.v.n == BUILTIN_CDR ||
                  car.v.n == BUILTIN_PAIR) {
-	if (cadr.v.tag != TAG_PTR || cadr.p == NULL) {
+        if (cadr.v.tag != TAG_PTR || cadr.p == NULL) {
           if (car.v.n == BUILTIN_PAIR) {
             return (val)(cell *)NULL;
           }
@@ -326,7 +319,7 @@ void read_line(parser *par, val *p_ctx) {
   val sexp;
   while (1) {
     sexp = parse_sexp(par);
-    if (sexp.v.tag == TAG_INVAL) {
+    if (invalid(sexp)) {
       if (par->c != '\n' && par->c != EOF) {
         fprintf(stderr, "failed to parse sexp at %c\n", par->c);
         parse_rest_of_line(par);
