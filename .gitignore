@@ -1,1 +1,7 @@
 *.out
+/sector/*.o
+/sector/*.elf
+/sector/*.bin
+/sector/*.img
+/sector/.venv/
+/sector/__pycache__/

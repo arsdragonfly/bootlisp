@@ -73,6 +73,13 @@ val inval = {.v = {TAG_INVAL, 0}};
       return inval;                                                            \
     number_.v.n;                                                               \
   })
+#define VALID(expr)                                                            \
+  ({                                                                           \
+    val value_ = (val)(expr);                                                  \
+    if (value_.v.tag == TAG_INVAL)                                             \
+      return inval;                                                            \
+    value_;                                                                    \
+  })
 
 struct arena {
   cell arena[ARENA_SIZE];
@@ -251,10 +258,7 @@ val apply_sexp(val car, val cdr, cell **p_ctx, cell *env) {
     } else if (car.v.n == BUILTIN_LAMBDA) {
       return (val)cellnew((val)env, cadr);
     } else {
-      cadr = eval_sexp(cadr, p_ctx, env);
-      if (cadr.v.tag == TAG_INVAL) {
-        return inval;
-      }
+      cadr = VALID(eval_sexp(cadr, p_ctx, env));
       if (car.v.n == BUILTIN_CAR || car.v.n == BUILTIN_CDR ||
           car.v.n == BUILTIN_PAIR) {
         if (cadr.v.tag != TAG_PTR || cadr.p == NULL) {
@@ -274,10 +278,7 @@ val apply_sexp(val car, val cdr, cell **p_ctx, cell *env) {
       } else if (car.v.n == BUILTIN_CONS || car.v.n == BUILTIN_EQ ||
                  car.v.n == BUILTIN_ADD || car.v.n == BUILTIN_SUB) {
         val caddr = CAR(CDR(cdr));
-        caddr = eval_sexp(caddr, p_ctx, env);
-        if (caddr.v.tag == TAG_INVAL) {
-          return inval;
-        }
+        caddr = VALID(eval_sexp(caddr, p_ctx, env));
         if (car.v.n == BUILTIN_EQ) {
           val result;
           if (cadr.v.tag == caddr.v.tag &&
