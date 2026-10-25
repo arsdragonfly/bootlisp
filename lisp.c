@@ -164,17 +164,19 @@ void parse_rest_of_line(parser *par) {
 
 val parse_sexp(parser *par) {
   val sexp = {.p = NULL}, sexp2;
-  char prefix[] = "%@";
-  char *charidx;
-  int tags[] = {TAG_REF, TAG_BUILTIN};
   val *p_sexp = &sexp;
   parse_multi(par, " ");
   if (parse_symbol(par, numerals, 0)) {
     return tagval(TAG_NUMBER, parse_natural(par));
   } else if (parse_symbol(par, "-", 1)) {
     return tagval(TAG_NUMBER, -parse_natural(par));
-  } else if ((charidx = parse_symbol(par, prefix, 1))) {
-    return tagval(tags[charidx - prefix], parse_natural(par));
+  } else if (parse_symbol(par, "%", 1)) {
+    if (par->c == '0') {
+      return inval;
+    }
+    return tagval(TAG_REF, -parse_natural(par));
+  } else if (parse_symbol(par, "@", 1)) {
+    return tagval(TAG_BUILTIN, parse_natural(par));
   } else if (parse_symbol(par, "/", 1)) {
     return tagval(TAG_BUILTIN, BUILTIN_LAMBDA);
   } else if (parse_symbol(par, "$", 1)) {
@@ -248,10 +250,10 @@ val eval_sexp(val sexp, val *p_ctx, cell *env) {
     return sexp;
   } else if (sexp.v.tag == TAG_REF) {
     cell *p = env;
-    size_t step = sexp.v.n;
+    int32_t step = sexp.v.n + 1;
     while (p && step) {
       p = CDR(p).p;
-      step--;
+      step++;
     }
     return CAR(p);
   } else if (sexp.v.tag == TAG_PTR) {
