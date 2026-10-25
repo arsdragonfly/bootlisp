@@ -8,7 +8,7 @@
 #error "Not 32-bit architecture"
 #endif
 
-#define ARENA_SIZE 1 << 20
+#define ARENA_SIZE (1 << 20)
 enum tag { TAG_PTR, TAG_NUMBER, TAG_REF, TAG_BUILTIN };
 enum builtin {
   BUILTIN_LAMBDA,
@@ -79,19 +79,46 @@ val tagval(int tag, int n) { return (val){.v = {.tag = tag, .n = n}}; }
 
 struct arena {
   cell arena[ARENA_SIZE];
-  size_t idx;
+  cell *free;
+  cell *allocated;
 } gbl = {0};
 
-char *numerals = "0123456789";
+void init_arena() {
+  gbl.free = gbl.arena;
+  gbl.free->car = tagval(TAG_NUMBER, ARENA_SIZE - 1);
+  gbl.free->cdr.p = NULL;
+  gbl.allocated = NULL;
+}
 
-cell *cellalloc() {
-  if (gbl.idx < ARENA_SIZE) {
-    gbl.idx++;
-    return gbl.arena + gbl.idx - 1;
+cell *cellvalloc(int size) {
+  if (size % 2 == 0) {
+    size++;
+  }
+  cell *a = gbl.allocated, **pa = &gbl.allocated;
+  for (cell *f = gbl.free, **pf = &gbl.free; f;
+       pf = &(f->cdr.p), f = f->cdr.p) {
+    for (; a && a < f; pa = &(a->cdr.p), a = a->cdr.p) {
+    }
+    if (size == f->car.v.n) {
+      *pf = f->cdr.p;
+      f->cdr.p = a;
+      *pa = f;
+      return *pa;
+    } else if (size < f->car.v.n) {
+      f->car.v.n = f->car.v.n - size - 1;
+      *pa = f + 1 + f->car.v.n;
+      (*pa)->car = tagval(TAG_NUMBER, size);
+      (*pa)->cdr.p = a;
+      return *pa;
+    }
   }
   fprintf(stderr, "error: out of memory\n");
   exit(1);
 }
+
+char *numerals = "0123456789";
+
+cell *cellalloc() { return cellvalloc(1) + 1; }
 
 cell *cellnew(val car, val cdr) {
   cell *p = cellalloc();
@@ -110,8 +137,7 @@ int advance_parser(parser *par) { return par->c = getchar(); }
 
 char *parse_symbol(parser *par, char *cs, int consume) {
   char *pc = cs;
-  while (pc && *pc != '\0' && par->c != *pc) {
-    pc++;
+  for (; pc && *pc != '\0' && par->c != *pc; pc++) {
   }
   if (*pc && consume) {
     advance_parser(par);
@@ -320,6 +346,7 @@ void read_line(parser *par, val *p_ctx) {
 int main() {
   parser par = {.c = '\n'};
   val ctx = {.p = NULL};
+  init_arena();
   while (par.c != EOF) {
     printf("lisp>");
     advance_parser(&par);
