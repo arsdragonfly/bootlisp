@@ -9,7 +9,7 @@
 #endif
 
 #define ARENA_SIZE (1 << 20)
-enum tag { TAG_PTR, TAG_NUMBER, TAG_REF };
+enum tag { TAG_PTR, TAG_NUMBER, TAG_REF, TAG_VECTOR };
 enum builtin {
   BUILTIN_INVAL,
   BUILTIN_QUOTE,
@@ -81,36 +81,29 @@ val tagval(int tag, int n) { return (val){.v = {.tag = tag, .n = n}}; }
 struct arena {
   cell arena[ARENA_SIZE];
   cell *free;
-  cell *allocated;
 } gbl = {0};
 
 void init_arena() {
   gbl.free = gbl.arena;
-  gbl.free->car = tagval(TAG_NUMBER, ARENA_SIZE - 1);
+  gbl.free->car = tagval(TAG_VECTOR, ARENA_SIZE - 1);
   gbl.free->cdr.p = NULL;
-  gbl.allocated = NULL;
 }
 
 cell *cellvalloc(int size) {
   if (size % 2 == 0) {
     size++;
   }
-  cell *a = gbl.allocated, **pa = &gbl.allocated;
   for (cell *f = gbl.free, **pf = &gbl.free; f;
        pf = &(f->cdr.p), f = f->cdr.p) {
-    for (; a && a < f; pa = &(a->cdr.p), a = a->cdr.p) {
-    }
     if (size == f->car.v.n) {
       *pf = f->cdr.p;
-      f->cdr.p = a;
-      *pa = f;
-      return *pa;
+      return f;
     } else if (size < f->car.v.n) {
       f->car.v.n = f->car.v.n - size - 1;
-      *pa = f + 1 + f->car.v.n;
-      (*pa)->car = tagval(TAG_NUMBER, size);
-      (*pa)->cdr.p = a;
-      return *pa;
+      f = f + 1 + f->car.v.n;
+      f->car = tagval(TAG_VECTOR, size);
+      f->cdr = tagval(TAG_VECTOR, 0);
+      return f;
     }
   }
   fprintf(stderr, "error: out of memory\n");
