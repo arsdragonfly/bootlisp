@@ -9,9 +9,9 @@
 #endif
 
 #define ARENA_SIZE (1 << 20)
-enum tag { TAG_PTR, TAG_NUMBER, TAG_REF, TAG_BUILTIN };
+enum tag { TAG_PTR, TAG_NUMBER, TAG_REF };
 enum builtin {
-  BUILTIN_LAMBDA,
+  BUILTIN_INVAL,
   BUILTIN_QUOTE,
   BUILTIN_CAR,
   BUILTIN_CDR,
@@ -22,7 +22,8 @@ enum builtin {
   BUILTIN_ADD,
   BUILTIN_NEG,
   BUILTIN_CTX,
-  BUILTIN_INVAL,
+  BUILTIN_LAMBDA,
+  BUILTIN_END,
 };
 
 typedef struct cell cell;
@@ -40,8 +41,8 @@ struct cell {
   val car, cdr;
 };
 
-val inval = {.v = {.tag = TAG_BUILTIN, .m = 0, .n = BUILTIN_INVAL}};
-int invalid(val v) { return v.v.tag == TAG_BUILTIN && v.v.n == BUILTIN_INVAL; }
+val inval = {.v = {.tag = TAG_REF, .m = 0, .n = BUILTIN_INVAL}};
+int invalid(val v) { return v.v.tag == TAG_REF && v.v.n == BUILTIN_INVAL; }
 
 val tagval(int tag, int n) { return (val){.v = {.tag = tag, .n = n}}; }
 
@@ -176,11 +177,11 @@ val parse_sexp(parser *par) {
     }
     return tagval(TAG_REF, -parse_natural(par));
   } else if (parse_symbol(par, "@", 1)) {
-    return tagval(TAG_BUILTIN, parse_natural(par));
+    return tagval(TAG_REF, parse_natural(par));
   } else if (parse_symbol(par, "/", 1)) {
-    return tagval(TAG_BUILTIN, BUILTIN_LAMBDA);
+    return tagval(TAG_REF, BUILTIN_LAMBDA);
   } else if (parse_symbol(par, "$", 1)) {
-    return tagval(TAG_BUILTIN, BUILTIN_CTX);
+    return tagval(TAG_REF, BUILTIN_CTX);
   } else if (parse_symbol(par, "(", 1)) {
     while (1) {
       while (parse_symbol(par, " \n", 0)) {
@@ -205,7 +206,7 @@ val parse_sexp(parser *par) {
 }
 
 void print_atom(val sexp) {
-  if (sexp.v.tag == TAG_BUILTIN && sexp.v.n == BUILTIN_LAMBDA) {
+  if (sexp.v.tag == TAG_REF && sexp.v.n == BUILTIN_LAMBDA) {
     printf("/");
   } else if (invalid(sexp)) {
     printf("#INVAL");
@@ -246,9 +247,9 @@ val evcar(val sexp, val *p_ctx, cell *env, val *outcdr);
 val apply_sexp(val car, val cdr, val *p_ctx, cell *env);
 
 val eval_sexp(val sexp, val *p_ctx, cell *env) {
-  if (sexp.v.tag == TAG_NUMBER || sexp.v.tag == TAG_BUILTIN) {
+  if (sexp.v.tag == TAG_NUMBER || (sexp.v.tag == TAG_REF && sexp.v.n >= 0)) {
     return sexp;
-  } else if (sexp.v.tag == TAG_REF) {
+  } else if (sexp.v.tag == TAG_REF && sexp.v.n < 0) {
     cell *p = env;
     int32_t step = sexp.v.n + 1;
     while (p && step) {
@@ -273,9 +274,9 @@ val evcar(val sexp, val *p_ctx, cell *env, val *outcdr) {
 }
 
 val apply_sexp(val car, val cdr, val *p_ctx, cell *env) {
-  if (car.v.tag == TAG_BUILTIN) {
+  if (car.v.tag == TAG_REF && car.v.n >= 0) {
     val cadr, caddr;
-    if (car.v.n >= BUILTIN_INVAL) {
+    if (car.v.n >= BUILTIN_END) {
       return inval;
     }
     if (car.v.n == BUILTIN_CTX && cdr.p == NULL) {
