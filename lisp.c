@@ -3,6 +3,7 @@
 #include "stdio.h"
 #include "stdlib.h"
 #include "string.h"
+#include <stdint.h>
 
 #if UINTPTR_MAX != 0xFFFFFFFFu
 #error "Not 32-bit architecture"
@@ -84,6 +85,7 @@ struct arena {
 } gbl = {0};
 
 void init_arena() {
+  memset(gbl.arena, 0, sizeof(cell) * ARENA_SIZE);
   gbl.free = gbl.arena;
   gbl.free->car = tagval(TAG_VECTOR, ARENA_SIZE - 1);
   gbl.free->cdr.p = NULL;
@@ -102,12 +104,68 @@ cell *cellvalloc(int size) {
       f->car.v.n = f->car.v.n - size - 1;
       f = f + 1 + f->car.v.n;
       f->car = tagval(TAG_VECTOR, size);
-      f->cdr = tagval(TAG_VECTOR, 0);
+      f->cdr = (val){.v = {.tag = TAG_VECTOR, .m = 1, .n = 0}};
       return f;
     }
   }
   fprintf(stderr, "error: out of memory\n");
   exit(1);
+}
+
+cell *toptr(val v) { return (cell *)((uintptr_t)(v.p) & ~0b111); }
+cell *isptr(val v) { return v.v.tag == TAG_PTR ? toptr(v) : NULL; }
+#define GCMARK(x) (toptr((val)x)->car.v.m)
+#define GCFLAG(x) (toptr((val)x)->cdr.v.m)
+void gcmarkv(val v) { toptr(v)->car.v.m = 1; }
+#define GCMARKLEAF(x, cont, ...)                                               \
+  if (!isptr((x)) || GCMARK((x))) {                                            \
+    if ((x).v.tag == TAG_VECTOR) {                                             \
+      gcmarkv((x));                                                            \
+    }                                                                          \
+    cont;                                                                      \
+  } else {                                                                     \
+    __VA_ARGS__                                                                \
+  }
+void rotate4(val *a, val *b, val *c, val *d) {
+  *a = (val){.v = {.tag = b->v.tag, .m = a->v.m, .n = b->v.n}};
+  *b = (val){.v = {.tag = c->v.tag, .m = b->v.m, .n = c->v.n}};
+  *c = (val){.v = {.tag = d->v.tag, .m = c->v.m, .n = d->v.n}};
+  *d = (val){.v = {.tag = a->v.tag, .m = d->v.m, .n = a->v.n}};
+}
+
+void gcmark(val root) {
+  root.v.m = 0;
+  GCMARKLEAF(root, { return; });
+  val prev = {}, tmp = {};
+  while (root.p) {
+    GCMARKLEAF(root.p->car, {
+      GCMARK(root) = 1;
+      GCMARKLEAF(root.p->cdr, { GCFLAG(root) = 1; })
+    })
+    if (GCFLAG(root)) {
+      GCFLAG(root) = 0;
+      while (prev.p) {
+        if (GCFLAG(prev)) {
+          GCFLAG(prev) = 0;
+          rotate4(&tmp, &prev.p->cdr, &root, &prev);
+        } else {
+          GCMARKLEAF(prev.p->cdr, rotate4(&tmp, &prev.p->car, &root, &prev);
+                     , { break; })
+        }
+      }
+      if (!prev.p) {
+        return;
+      }
+      GCFLAG(prev) = 1;
+      rotate4(&tmp, &prev.p->car, &root, &prev.p->cdr);
+    } else if (GCMARK(root)) {
+      GCFLAG(root) = 1;
+      rotate4(&tmp, &root.p->cdr, &prev, &root);
+    } else {
+      GCMARK(root) = 1;
+      rotate4(&tmp, &root.p->car, &prev, &root);
+    }
+  }
 }
 
 char *numerals = "0123456789";
@@ -203,11 +261,15 @@ void print_atom(val sexp) {
     printf("/");
   } else if (invalid(sexp)) {
     printf("#INVAL");
+  } else if (sexp.v.tag == TAG_REF && sexp.v.n > 0) {
+    printf("@%d", sexp.v.n);
+  } else if (sexp.v.tag == TAG_REF && sexp.v.n < 0) {
+    printf("%%%d", (-sexp.v.n));
+  } else if (sexp.v.tag == TAG_VECTOR) {
+    printf("(#vec %x %d %d %.*s)", sexp.v.n, toptr(sexp)->car.v.n,
+           toptr(sexp)->cdr.v.n, toptr(sexp)->cdr.v.n,
+           (char *)(toptr(sexp) + 1));
   } else {
-    char *prefixes = "  %$ @";
-    if (sexp.v.tag != TAG_NUMBER) {
-      printf("%c", prefixes[sexp.v.tag]);
-    }
     printf("%d", sexp.v.n);
   }
 }
@@ -335,6 +397,12 @@ void read_line(parser *par, val *p_ctx) {
       return;
     }
     print_sexp(eval_sexp(sexp, p_ctx, NULL));
+    /* test */
+    /*
+    if (p_ctx && isptr(*p_ctx)) {
+      gcmark(*p_ctx);
+    }
+    */
     printf("\n");
   }
 }
