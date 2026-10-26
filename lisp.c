@@ -99,6 +99,7 @@ cell *cellvalloc(int size) {
        pf = &(f->cdr.p), f = f->cdr.p) {
     if (size == f->car.v.n) {
       *pf = f->cdr.p;
+      f->cdr = (val){.v = {.tag = TAG_VECTOR, .m = 1, .n = 0}};
       return f;
     } else if (size < f->car.v.n) {
       f->car.v.n = f->car.v.n - size - 1;
@@ -168,9 +169,86 @@ void gcmark(val root) {
   }
 }
 
+int gccell(cell *c) {
+  if (c->car.v.m == 1) {
+    {
+      c->car.v.m = 0;
+      if (c->cdr.v.m != 1) {
+        return 0;
+      }
+      return -(c->car.v.n);
+    }
+  }
+  if (c->cdr.v.m != 1) {
+    return 1;
+  }
+  return 1 + c->car.v.n;
+}
+
+void gcsweep() {
+  cell *p = gbl.arena;
+  cell **f = &gbl.free;
+  cell *b = NULL;
+  int result;
+  while (*f && *f == p) {
+    p += (*f)->car.v.n + 1;
+    b = *f;
+    f = &((*f)->cdr.p);
+  }
+  while (p < gbl.arena + ARENA_SIZE) {
+    result = gccell(p);
+    if (result <= 0) {
+      p += 1 - result;
+      while (*f && *f == p) {
+        p += (*f)->car.v.n + 1;
+        b = *f;
+        f = &((*f)->cdr.p);
+      }
+    } else {
+      if (b && p == b + 1 + b->car.v.n) {
+        b->car.v.n += result;
+        p += result;
+      } else {
+        p->car = (val){.v = {.tag = TAG_VECTOR, .n = result - 1}};
+        p->cdr.p = *f;
+        b = *f = p;
+        f = &((*f)->cdr.p);
+        p += result;
+      }
+      while (*f && *f == p) {
+        b->car.v.n += (*f)->car.v.n + 1;
+        p += (*f)->car.v.n + 1;
+        *f = (*f)->cdr.p;
+      }
+    }
+  }
+}
+
+void gc(val *roots, int nroots) {
+  for (int i = 0; i < nroots; i++) {
+    gcmark(roots[i]);
+  }
+  gcsweep();
+}
+
 char *numerals = "0123456789";
 
-cell *cellalloc() { return cellvalloc(1) + 1; }
+cell *cellalloc() {
+  cell *f = gbl.free, **b = &gbl.free;
+  if (f) {
+    if (f->car.v.n == 0) {
+      *b = f->cdr.p;
+      memset(f, 0, sizeof(cell));
+      return f;
+    } else {
+      memset(f + f->car.v.n, 0, sizeof(cell));
+      f->car.v.n -= 1;
+      return f + 1 + f->car.v.n;
+    }
+  }
+  fprintf(stderr, "error: out of memory\n");
+  exit(1);
+}
 
 cell *cellnew(val car, val cdr) {
   cell *p = cellalloc();
@@ -398,11 +476,9 @@ void read_line(parser *par, val *p_ctx) {
     }
     print_sexp(eval_sexp(sexp, p_ctx, NULL));
     /* test */
-    /*
     if (p_ctx && isptr(*p_ctx)) {
-      gcmark(*p_ctx);
+      gc(p_ctx, 1);
     }
-    */
     printf("\n");
   }
 }
