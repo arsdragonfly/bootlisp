@@ -80,7 +80,7 @@ val tagval(int tag, int n) { return (val){.v = {.tag = tag, .n = n}}; }
   })
 
 struct arena {
-  cell arena[ARENA_SIZE];
+  _Alignas(8) cell arena[ARENA_SIZE];
   cell *free;
 } gbl = {0};
 
@@ -489,6 +489,7 @@ int main() {
   init_arena();
   while (par.c != EOF) {
     printf("lisp>");
+    fflush(stdout);
     advance_parser(&par);
     read_line(&par, &ctx);
   }
